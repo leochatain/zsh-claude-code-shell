@@ -6,11 +6,14 @@
 : ${ZSH_CLAUDE_SHELL_MODEL:=}
 : ${ZSH_CLAUDE_SHELL_DEBUG:=0}
 
-# Check if claude CLI is available
-if ! command -v claude &> /dev/null; then
-    echo "zsh-claude-code-shell: 'claude' command not found. Please install Claude Code CLI."
-    return 1
-fi
+# Check if claude CLI is available (lazy check - deferred until first use)
+_zsh_claude_check_cli() {
+    if ! command -v claude &> /dev/null; then
+        echo "zsh-claude-code-shell: 'claude' command not found. Please install Claude Code CLI."
+        return 1
+    fi
+    return 0
+}
 
 # Sanitize output - remove markdown code blocks and trim whitespace
 _zsh_claude_sanitize() {
@@ -61,6 +64,12 @@ _zsh_claude_accept_line() {
     if [[ -z "${query// }" ]]; then
         zle .accept-line
         return
+    fi
+
+    # Check if claude CLI is available
+    if ! _zsh_claude_check_cli; then
+        zle reset-prompt
+        return 1
     fi
 
     # Show loading message
