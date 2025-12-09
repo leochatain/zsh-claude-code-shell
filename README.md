@@ -35,7 +35,7 @@ find . -type d -name "node_modules" -prune -exec rm -rf {} +
 Clone to your custom plugins directory:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/zsh-claude-code-shell ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-claude-code-shell
+git clone https://github.com/ArielTM/zsh-claude-code-shell ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-claude-code-shell
 ```
 
 Add to your `~/.zshrc`:
@@ -51,20 +51,20 @@ Restart your shell or run `source ~/.zshrc`.
 Clone the repository and source the plugin:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/zsh-claude-code-shell ~/zsh-claude-code-shell
+git clone https://github.com/ArielTM/zsh-claude-code-shell ~/zsh-claude-code-shell
 echo 'source ~/zsh-claude-code-shell/zsh-claude-code-shell.plugin.zsh' >> ~/.zshrc
 ```
 
 ### zinit
 
 ```bash
-zinit light YOUR_USERNAME/zsh-claude-code-shell
+zinit light ArielTM/zsh-claude-code-shell
 ```
 
 ### zplug
 
 ```bash
-zplug "YOUR_USERNAME/zsh-claude-code-shell"
+zplug "ArielTM/zsh-claude-code-shell"
 ```
 
 ## Usage
