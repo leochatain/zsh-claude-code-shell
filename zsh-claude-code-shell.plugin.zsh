@@ -63,7 +63,8 @@ _zsh_claude_stop_spinner() {
     local pid=$1
     if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
         kill "$pid" 2>/dev/null
-        wait "$pid" 2>/dev/null
+        # Small delay to let the process terminate
+        sleep 0.05
     fi
     # Show cursor and clear line
     printf '\033[?25h\r\033[K' > /dev/tty
@@ -138,8 +139,11 @@ _zsh_claude_accept_line() {
     # Start spinner or show simple message
     local spinner_pid=""
     if [[ "$ZSH_CLAUDE_SHELL_FANCY_LOADING" == "1" ]]; then
+        # Disable job notifications to prevent [1] 12345 and terminated messages
+        setopt local_options no_notify no_monitor
         _zsh_claude_spinner &
         spinner_pid=$!
+        disown $spinner_pid 2>/dev/null
     else
         zle -R "Generating command with Claude..."
     fi
