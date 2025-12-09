@@ -5,6 +5,69 @@
 : ${ZSH_CLAUDE_SHELL_DISABLED:=0}
 : ${ZSH_CLAUDE_SHELL_MODEL:=}
 : ${ZSH_CLAUDE_SHELL_DEBUG:=0}
+: ${ZSH_CLAUDE_SHELL_FANCY_LOADING:=1}  # Set to 0 to use simple loading message
+
+# Thinking verbs (from Claude Code)
+_ZSH_CLAUDE_THINKING_VERBS=(
+    "Accomplishing" "Actioning" "Actualizing" "Baking" "Brewing"
+    "Calculating" "Cerebrating" "Churning" "Clauding" "Coalescing"
+    "Cogitating" "Computing" "Conjuring" "Considering" "Cooking"
+    "Crafting" "Creating" "Crunching" "Deliberating" "Determining"
+    "Doing" "Effecting" "Finagling" "Forging" "Forming" "Generating"
+    "Hatching" "Herding" "Honking" "Hustling" "Ideating" "Inferring"
+    "Manifesting" "Marinating" "Moseying" "Mulling" "Mustering" "Musing"
+    "Noodling" "Percolating" "Pondering" "Processing" "Puttering"
+    "Reticulating" "Ruminating" "Schlepping" "Shucking" "Simmering"
+    "Smooshing" "Spinning" "Stewing" "Synthesizing" "Thinking"
+    "Transmuting" "Vibing" "Working"
+)
+
+# Spinner animation (runs in background, writes to /dev/tty)
+_zsh_claude_spinner() {
+    local spinchars='✽⊹✦◈'
+    local spin_len=4
+    local words_len=${#_ZSH_CLAUDE_THINKING_VERBS[@]}
+    local i=1
+    local w=$(( RANDOM % words_len + 1 ))  # Start with random word
+    local tick=0
+
+    # Colors for shimmering effect (cyan gradient)
+    local -a colors=('\033[96m' '\033[36m' '\033[96m' '\033[36m')
+    local color_idx=1
+
+    # Hide cursor
+    printf '\033[?25l' > /dev/tty
+
+    while true; do
+        local char="${spinchars[$i]}"
+        local word="${_ZSH_CLAUDE_THINKING_VERBS[$w]}"
+        local color="${colors[$color_idx]}"
+
+        # Print spinner with shimmering color effect
+        printf '\r\033[K%b%s %s...\033[0m' "$color" "$char" "$word" > /dev/tty
+
+        i=$(( i % spin_len + 1 ))
+        tick=$(( tick + 1 ))
+        color_idx=$(( color_idx % 4 + 1 ))
+
+        # Change word every ~12 ticks (~1.2 seconds)
+        if (( tick % 12 == 0 )); then
+            w=$(( RANDOM % words_len + 1 ))
+        fi
+        sleep 0.1
+    done
+}
+
+# Stop spinner and cleanup
+_zsh_claude_stop_spinner() {
+    local pid=$1
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+        kill "$pid" 2>/dev/null
+        wait "$pid" 2>/dev/null
+    fi
+    # Show cursor and clear line
+    printf '\033[?25h\r\033[K' > /dev/tty
+}
 
 # Check if claude CLI is available (lazy check - deferred until first use)
 _zsh_claude_check_cli() {
@@ -72,8 +135,14 @@ _zsh_claude_accept_line() {
         return 1
     fi
 
-    # Show loading message
-    zle -R "Generating command with Claude..."
+    # Start spinner or show simple message
+    local spinner_pid=""
+    if [[ "$ZSH_CLAUDE_SHELL_FANCY_LOADING" == "1" ]]; then
+        _zsh_claude_spinner &
+        spinner_pid=$!
+    else
+        zle -R "Generating command with Claude..."
+    fi
 
     # Build claude command - restrict tools and use focused system prompt
     local claude_args=("-p" "--output-format" "text")
@@ -95,6 +164,9 @@ _zsh_claude_accept_line() {
         cmd=$(claude "${claude_args[@]}" "$query" 2>/dev/null)
         exit_code=$?
     fi
+
+    # Stop spinner
+    [[ -n "$spinner_pid" ]] && _zsh_claude_stop_spinner "$spinner_pid"
 
     # Handle errors
     if [[ $exit_code -ne 0 ]] || [[ -z "$cmd" ]]; then
