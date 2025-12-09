@@ -105,6 +105,7 @@ Set these environment variables in your `~/.zshrc` before the plugin loads:
 | `ZSH_CLAUDE_SHELL_DISABLED` | `0` | Set to `1` to disable the plugin |
 | `ZSH_CLAUDE_SHELL_MODEL` | (default) | Override the Claude model (e.g., `sonnet`, `opus`) |
 | `ZSH_CLAUDE_SHELL_DEBUG` | `0` | Set to `1` to show debug output |
+| `ZSH_CLAUDE_SHELL_FANCY_LOADING` | `1` | Set to `0` to use simple loading message instead of animated spinner |
 
 ### Example
 
