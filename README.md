@@ -9,6 +9,7 @@ An oh-my-zsh plugin that translates natural language comments into shell command
 This plugin provides two modes for working with shell commands using Claude Code:
 
 ### Generate Mode (`#?`)
+
 Type `#?` followed by what you want to accomplish in natural language. The plugin generates the shell command for you.
 
 **Example:**
@@ -27,7 +28,7 @@ More examples:
 
 ![Generate commit command](vhs/generate_commit.gif)
 
-**🔑 Context-Aware: The plugin has access to your last executed command**, enabling powerful workflows:
+**Context-Aware: The plugin has access to your last executed command**
 
 ```bash
 $ grp -r "TODO" src/           # Oops, typo!
