@@ -1,14 +1,18 @@
 # zsh-claude-code-shell - Generate shell commands from natural language using Claude Code
 # Usage: Type "#? <description>" to generate a command, "#?? <command>" to explain a command
 
+# Only load in interactive shells
+[[ ! -o interactive ]] && return
+
 # Configuration
 : ${ZSH_CLAUDE_SHELL_DISABLED:=0}
 : ${ZSH_CLAUDE_SHELL_MODEL:=sonnet}
 : ${ZSH_CLAUDE_SHELL_DEBUG:=0}
 : ${ZSH_CLAUDE_SHELL_FANCY_LOADING:=1}  # Set to 0 to use simple loading message
+: ${ZSH_CLAUDE_SHELL_ALLOW_INTERNET:=0}  # Set to 1 to allow WebSearch and WebFetch tools
 
 # System prompts
-_ZSH_CLAUDE_EXPLAIN_PROMPT="You are a shell command explainer. The user may provide their last executed command and current directory for context.
+_ZSH_CLAUDE_EXPLAIN_PROMPT="You are a shell command explainer. Context is provided in <context> XML tags, and the user's request is in <user_request> tags.
 
 The user will give you a shell command to explain. Explain what it does concisely:
 - First line: one-sentence summary of the overall command.
@@ -16,11 +20,11 @@ The user will give you a shell command to explain. Explain what it does concisel
 - If it's a pipeline, explain each stage.
 - Keep it brief. No preamble, no sign-off."
 
-_ZSH_CLAUDE_GENERATE_PROMPT="You are a shell command generator. The user may provide their last executed command and current directory for context to help you understand what they're working on.
+_ZSH_CLAUDE_GENERATE_PROMPT="You are a shell command generator. Context is provided in <context> XML tags, and the user's request is in <user_request> tags.
 
-When the user references \"last command\", \"previous command\", \"that command\", or \"the command\", they are referring to the command shown in the \"Last command:\" context field.
+When the user references \"last command\", \"previous command\", \"that command\", or \"the command\", they are referring to the <last_command> shown in the context.
 
-Your ONLY job is to output a single shell command that accomplishes the user's request. Output ONLY the raw shell command - no markdown, no code blocks, no explanations, no comments, no backticks. Just the executable command itself on a single line. If you need to look up command syntax, you may use web search."
+Your ONLY job is to output a single shell command that accomplishes the user's request. Output ONLY the raw shell command - no markdown, no code blocks, no explanations, no comments, no backticks. Just the executable command itself on a single line."
 
 # Thinking verbs (from Claude Code)
 _ZSH_CLAUDE_THINKING_VERBS=(
@@ -142,7 +146,7 @@ _zsh_claude_get_history_context() {
     [[ -z "$last_cmd" ]] && return
     [[ "$last_cmd" == '#?'* ]] && return
 
-    echo "Last command: $last_cmd"
+    echo "<last_command>$last_cmd</last_command>"
 }
 
 # Get current directory context
@@ -152,7 +156,7 @@ _zsh_claude_get_directory_context() {
     # Replace $HOME with ~ for readability
     current_dir="${current_dir/#$HOME/~}"
 
-    echo "Current directory: $current_dir"
+    echo "<directory>$current_dir</directory>"
 }
 
 # Print debug information to terminal
@@ -255,15 +259,18 @@ _zsh_claude_accept_line() {
     local dir_context=$(_zsh_claude_get_directory_context)
     local hist_context=$(_zsh_claude_get_history_context)
 
-    # Build enhanced query with context
+    # Build enhanced query with XML-delimited context.
+    # Structured tags prevent prompt injection via crafted directory names or
+    # history entries — Claude treats tag boundaries as structural, so content
+    # inside <directory> or <last_command> can't masquerade as a <user_request>.
     local enhanced_query=""
-    [[ -n "$dir_context" ]] && enhanced_query+="${dir_context}"$'\n'
-    [[ -n "$hist_context" ]] && enhanced_query+="${hist_context}"$'\n'
-    if [[ -n "$enhanced_query" ]]; then
-        enhanced_query+=$'\n'"User request: ${query}"
-    else
-        enhanced_query="$query"
+    if [[ -n "$dir_context" ]] || [[ -n "$hist_context" ]]; then
+        enhanced_query+="<context>"$'\n'
+        [[ -n "$dir_context" ]] && enhanced_query+="${dir_context}"$'\n'
+        [[ -n "$hist_context" ]] && enhanced_query+="${hist_context}"$'\n'
+        enhanced_query+="</context>"$'\n'
     fi
+    enhanced_query+="<user_request>${query}</user_request>"
 
     # Select mode-appropriate system prompt
     local system_prompt
@@ -281,15 +288,20 @@ _zsh_claude_accept_line() {
     fi
 
     # Build claude command
-    local claude_args=("-p" "--output-format" "text")
-    claude_args+=("--tools" "WebSearch,WebFetch")
+    local claude_args=("-p" "--output-format" "text" "--max-turns" "1")
+    if [[ "$ZSH_CLAUDE_SHELL_ALLOW_INTERNET" == "1" ]]; then
+        claude_args+=("--tools" "WebSearch,WebFetch")
+    else
+        claude_args+=("--tools" "")
+    fi
     claude_args+=("--system-prompt" "$system_prompt")
     if [[ -n "$ZSH_CLAUDE_SHELL_MODEL" ]]; then
         claude_args+=("--model" "$ZSH_CLAUDE_SHELL_MODEL")
     fi
 
     # Call Claude Code CLI with output to temp file so we can use wait
-    local tmpfile="${TMPDIR:-/tmp}/zsh-claude-$$"
+    local tmpfile
+    tmpfile=$(mktemp "${TMPDIR:-/tmp}/zsh-claude-XXXXXX")
     local claude_pid
     local exit_code
     local cmd
