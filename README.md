@@ -66,7 +66,7 @@ This command finds the 10 largest files in the current directory:
 
 ![Explain command](vhs/explain.gif)
 
-**🔑 You can also explain your last command** without retyping it:
+**You can also explain your last command** without retyping it:
 
 ```bash
 $ tar -xzf archive.tar.gz -C /tmp --strip-components=1
