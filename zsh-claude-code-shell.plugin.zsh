@@ -3,7 +3,7 @@
 
 # Configuration
 : ${ZSH_CLAUDE_SHELL_DISABLED:=0}
-: ${ZSH_CLAUDE_SHELL_MODEL:=}
+: ${ZSH_CLAUDE_SHELL_MODEL:=sonnet}
 : ${ZSH_CLAUDE_SHELL_DEBUG:=0}
 : ${ZSH_CLAUDE_SHELL_FANCY_LOADING:=1}  # Set to 0 to use simple loading message
 : ${ZSH_CLAUDE_SHELL_HISTORY_LINES:=5}  # Number of recent commands to include as context (0 to disable)
