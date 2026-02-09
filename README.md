@@ -108,6 +108,7 @@ Set these environment variables in your `~/.zshrc` before the plugin loads:
 | `ZSH_CLAUDE_SHELL_MODEL` | (default) | Override the Claude model (e.g., `sonnet`, `opus`) |
 | `ZSH_CLAUDE_SHELL_DEBUG` | `0` | Set to `1` to show debug output |
 | `ZSH_CLAUDE_SHELL_FANCY_LOADING` | `1` | Set to `0` to use simple loading message instead of animated spinner |
+| `ZSH_CLAUDE_SHELL_HISTORY_LINES` | `5` | Number of recent commands to include as context (set to `0` to disable) |
 
 ### Example
 
@@ -123,12 +124,25 @@ export ZSH_CLAUDE_SHELL_DISABLED=1
 
 The plugin overrides zsh's `accept-line` widget (the Enter key handler). When you press Enter:
 
-1. If the line starts with `#? `, it extracts your description
-2. Calls `claude -p` with your description
-3. Replaces the buffer with the generated command
-4. You review and press Enter again to execute
+1. If the line starts with `#? ` or `#?? `, it extracts your query
+2. Gathers context: current directory and recent command history (last 5 commands by default)
+3. Calls `claude -p` with the context and your query
+4. For `#?` (generate): replaces the buffer with the generated command
+5. For `#??` (explain): displays the explanation and sets the buffer to the original command
+6. You review and press Enter again to execute (for generate mode) or edit as needed
 
-Lines that don't start with `#? ` work normally.
+Lines that don't start with `#? ` or `#?? ` work normally.
+
+### Context Features
+
+The plugin automatically includes:
+- **Current directory**: Helps Claude understand your working location
+- **Recent command history**: Last 5 commands (configurable) to provide context about what you're working on
+- **Security**: Automatically filters out sensitive commands containing passwords, tokens, API keys, sudo, etc.
+
+This context helps Claude generate more relevant commands. For example, if you recently cloned a repository and changed into its directory, asking `#? run tests` will be aware of your project context.
+
+To disable history context, set `ZSH_CLAUDE_SHELL_HISTORY_LINES=0` in your `~/.zshrc`.
 
 ## License
 
