@@ -4,8 +4,14 @@ An oh-my-zsh plugin that translates natural language comments into shell command
 
 > **Note:** This is a fork of [ArielTM/zsh-claude-code-shell](https://github.com/ArielTM/zsh-claude-code-shell).
 
-## Demo
+## What It Does
 
+This plugin provides two modes for working with shell commands using Claude Code:
+
+### Generate Mode (`#?`)
+Type `#?` followed by what you want to accomplish in natural language. The plugin generates the shell command for you.
+
+**Example:**
 ```bash
 #? find all js files larger than 100kb modified in the last week and show their sizes
 ```
@@ -15,14 +21,22 @@ find . -name "*.js" -size +100k -mtime -7 -exec ls -lh {} \;
 ```
 Review the command, press Enter again to execute.
 
-Another example:
+### Explain Mode (`#??`)
+Type `#??` followed by a command you don't understand. The plugin explains what it does in plain English.
+
+**Example:**
 ```bash
-#? recursively find and delete all node_modules folders
+#?? find . -type f -exec du -h {} + | sort -rh | head -10
 ```
-Becomes:
-```bash
-find . -type d -name "node_modules" -prune -exec rm -rf {} +
+Press Enter, and you'll see an explanation like:
 ```
+This command finds the 10 largest files in the current directory:
+1. find . -type f: Finds all files recursively
+2. -exec du -h {} +: Gets human-readable size of each file
+3. sort -rh: Sorts by size (largest first)
+4. head -10: Shows only the top 10 results
+```
+The original command remains in your prompt for you to edit or execute.
 
 ## Prerequisites
 
