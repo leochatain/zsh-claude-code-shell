@@ -1,5 +1,5 @@
 # zsh-claude-code-shell - Generate shell commands from natural language using Claude Code
-# Usage: Type "#? <description>" and press Enter to generate a command
+# Usage: Type "#? <description>" to generate a command, "#?? <command>" to explain a command
 
 # Configuration
 : ${ZSH_CLAUDE_SHELL_DISABLED:=0}
@@ -102,6 +102,22 @@ _zsh_claude_sanitize() {
     echo "$input"
 }
 
+# Sanitize explain output - strip wrapping code fences but keep inline backticks
+_zsh_claude_sanitize_explain() {
+    local input="$1"
+
+    # Remove wrapping code block markers (```bash, ```, etc.)
+    input="${input#\`\`\`*$'\n'}"  # Remove opening ```lang\n
+    input="${input%\`\`\`}"         # Remove closing ```
+    input="${input#\`\`\`}"         # Remove opening ``` without newline
+
+    # Trim leading/trailing whitespace
+    input="${input#"${input%%[![:space:]]*}"}"
+    input="${input%"${input##*[![:space:]]}"}"
+
+    echo "$input"
+}
+
 # Main widget that intercepts Enter key
 _zsh_claude_accept_line() {
     # Pass through if disabled
@@ -116,8 +132,13 @@ _zsh_claude_accept_line() {
         return
     fi
 
-    # Pass through if buffer doesn't start with "#? "
-    if [[ "$BUFFER" != '#? '* ]]; then
+    # Detect mode: #?? (explain) must be checked before #? (generate)
+    local mode=""
+    if [[ "$BUFFER" == '#?? '* ]]; then
+        mode="explain"
+    elif [[ "$BUFFER" == '#? '* ]]; then
+        mode="generate"
+    else
         zle .accept-line
         return
     fi
@@ -128,8 +149,13 @@ _zsh_claude_accept_line() {
         return
     fi
 
-    # Extract query (remove "#? " prefix)
-    local query="${BUFFER:3}"
+    # Extract query (remove prefix)
+    local query
+    if [[ "$mode" == "explain" ]]; then
+        query="${BUFFER:4}"  # skip "#?? "
+    else
+        query="${BUFFER:3}"  # skip "#? "
+    fi
 
     # Skip empty queries
     if [[ -z "${query// }" ]]; then
@@ -154,13 +180,25 @@ _zsh_claude_accept_line() {
         spinner_pid=$!
         disown $spinner_pid 2>/dev/null
     else
-        zle -R "Generating command with Claude..."
+        if [[ "$mode" == "explain" ]]; then
+            zle -R "Explaining command..."
+        else
+            zle -R "Generating command..."
+        fi
     fi
 
-    # Build claude command - restrict tools and use focused system prompt
+    # Build claude command - restrict tools and use mode-appropriate system prompt
     local claude_args=("-p" "--output-format" "text")
     claude_args+=("--tools" "WebSearch,WebFetch")
-    claude_args+=("--system-prompt" "You are a shell command generator. Your ONLY job is to output a single shell command that accomplishes the user's request. Output ONLY the raw shell command - no markdown, no code blocks, no explanations, no comments, no backticks. Just the executable command itself on a single line. If you need to look up command syntax, you may use web search.")
+    if [[ "$mode" == "explain" ]]; then
+        claude_args+=("--system-prompt" "You are a shell command explainer. The user will give you a shell command. Explain what it does concisely:
+- First line: one-sentence summary of the overall command.
+- Then explain each flag and argument using \"\`flag\`: explanation\" format.
+- If it's a pipeline, explain each stage.
+- Keep it brief. No preamble, no sign-off.")
+    else
+        claude_args+=("--system-prompt" "You are a shell command generator. Your ONLY job is to output a single shell command that accomplishes the user's request. Output ONLY the raw shell command - no markdown, no code blocks, no explanations, no comments, no backticks. Just the executable command itself on a single line. If you need to look up command syntax, you may use web search.")
+    fi
 
     if [[ -n "$ZSH_CLAUDE_SHELL_MODEL" ]]; then
         claude_args+=("--model" "$ZSH_CLAUDE_SHELL_MODEL")
@@ -209,17 +247,33 @@ _zsh_claude_accept_line() {
 
     # Handle errors
     if [[ $exit_code -ne 0 ]] || [[ -z "$cmd" ]]; then
-        zle -M "Error: Failed to generate command (exit code: $exit_code)"
+        if [[ "$mode" == "explain" ]]; then
+            zle -M "Error: Failed to explain command (exit code: $exit_code)"
+        else
+            zle -M "Error: Failed to generate command (exit code: $exit_code)"
+        fi
         zle reset-prompt
         return 1
     fi
 
-    # Sanitize the output
-    cmd=$(_zsh_claude_sanitize "$cmd")
+    if [[ "$mode" == "explain" ]]; then
+        # Sanitize and print explanation to terminal
+        cmd=$(_zsh_claude_sanitize_explain "$cmd")
+        print -r -- "" > /dev/tty
+        print -r -- "$cmd" > /dev/tty
+        print -r -- "" > /dev/tty
 
-    # Replace buffer with generated command
-    BUFFER="$cmd"
-    CURSOR=${#BUFFER}
+        # Set buffer to the original command (without #?? prefix) so user can run it
+        BUFFER="$query"
+        CURSOR=${#BUFFER}
+    else
+        # Sanitize the output
+        cmd=$(_zsh_claude_sanitize "$cmd")
+
+        # Replace buffer with generated command
+        BUFFER="$cmd"
+        CURSOR=${#BUFFER}
+    fi
 
     zle reset-prompt
 }
