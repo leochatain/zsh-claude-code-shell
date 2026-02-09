@@ -6,7 +6,6 @@
 : ${ZSH_CLAUDE_SHELL_MODEL:=sonnet}
 : ${ZSH_CLAUDE_SHELL_DEBUG:=0}
 : ${ZSH_CLAUDE_SHELL_FANCY_LOADING:=1}  # Set to 0 to use simple loading message
-: ${ZSH_CLAUDE_SHELL_HISTORY_LINES:=5}  # Number of recent commands to include as context (0 to disable)
 
 # Thinking verbs (from Claude Code)
 _ZSH_CLAUDE_THINKING_VERBS=(
@@ -119,72 +118,21 @@ _zsh_claude_sanitize_explain() {
     echo "$input"
 }
 
-# Get recent command history for context (filters out sensitive commands)
+# Get the last command for context
 _zsh_claude_get_history_context() {
-    local num_lines="${ZSH_CLAUDE_SHELL_HISTORY_LINES:-5}"
+    # Get the last command from history
+    local last_cmd
+    last_cmd=$(fc -ln -1 2>/dev/null) || return
 
-    # Return empty if history is disabled
-    if [[ "$num_lines" -le 0 ]]; then
-        return
-    fi
+    # Trim leading/trailing whitespace
+    last_cmd="${last_cmd#"${last_cmd%%[![:space:]]*}"}"
+    last_cmd="${last_cmd%"${last_cmd##*[![:space:]]}"}"
 
-    # Sensitive patterns to filter out (case-insensitive matching)
-    local -a sensitive_patterns=(
-        'password' 'passwd' 'pwd=' 'pass='
-        'token' 'api_key' 'apikey' 'api-key'
-        'secret' 'credential' 'auth'
-        'sudo' 'su '
-        'export.*key' 'export.*token' 'export.*secret'
-    )
+    # Skip if empty or if it's a #? or #?? query
+    [[ -z "$last_cmd" ]] && return
+    [[ "$last_cmd" == '#?'* ]] && return
 
-    # Get more history than needed to have buffer after filtering
-    local buffer_size=$((num_lines + 20))
-    local raw_history
-    raw_history=$(fc -ln -${buffer_size} -1 2>/dev/null) || return
-
-    # Process history line by line
-    local -a filtered_history
-    local line
-    local count=0
-
-    while IFS= read -r line; do
-        # Skip empty lines
-        [[ -z "${line// }" ]] && continue
-
-        # Skip previous #? and #?? queries
-        [[ "$line" == '#?'* ]] && continue
-
-        # Check for sensitive patterns (case-insensitive)
-        local is_sensitive=0
-        local pattern
-        for pattern in "${sensitive_patterns[@]}"; do
-            if [[ "${(L)line}" =~ "${(L)pattern}" ]]; then
-                is_sensitive=1
-                break
-            fi
-        done
-
-        [[ $is_sensitive -eq 1 ]] && continue
-
-        # Add to filtered history
-        filtered_history+=("$line")
-        count=$((count + 1))
-
-        # Stop once we have enough
-        [[ $count -ge $num_lines ]] && break
-    done <<< "$raw_history"
-
-    # Return empty if no valid history
-    [[ $count -eq 0 ]] && return
-
-    # Build numbered history output
-    local output="Recent command history:"
-    local i
-    for i in {1..$count}; do
-        output+="\n  ${i}. ${filtered_history[$i]}"
-    done
-
-    echo "$output"
+    echo "Last command: $last_cmd"
 }
 
 # Get current directory context
@@ -236,6 +184,13 @@ _zsh_claude_accept_line() {
         query="${BUFFER:3}"  # skip "#? "
     fi
 
+    # Check for --DEBUG flag
+    local debug_mode=0
+    if [[ "$query" == '--DEBUG '* ]]; then
+        debug_mode=1
+        query="${query:8}"  # skip "--DEBUG "
+    fi
+
     # Skip empty queries
     if [[ -z "${query// }" ]]; then
         zle .accept-line
@@ -268,32 +223,65 @@ _zsh_claude_accept_line() {
 
     # Build context for the query
     local dir_context=$(_zsh_claude_get_directory_context)
-    local hist_context=""
-    if [[ "$ZSH_CLAUDE_SHELL_HISTORY_LINES" -gt 0 ]]; then
-        hist_context=$(_zsh_claude_get_history_context)
-    fi
+    local hist_context=$(_zsh_claude_get_history_context)
 
     # Build enhanced query with context
     local enhanced_query=""
     if [[ -n "$dir_context" ]] || [[ -n "$hist_context" ]]; then
-        [[ -n "$dir_context" ]] && enhanced_query+="${dir_context}\n"
-        [[ -n "$hist_context" ]] && enhanced_query+="${hist_context}\n"
-        enhanced_query+="\nUser request: ${query}"
+        [[ -n "$dir_context" ]] && enhanced_query+="${dir_context}"$'\n'
+        [[ -n "$hist_context" ]] && enhanced_query+="${hist_context}"$'\n'
+        enhanced_query+=$'\n'"User request: ${query}"
     else
         enhanced_query="$query"
+    fi
+
+    # Print debug information if --DEBUG flag was used
+    if [[ $debug_mode -eq 1 ]]; then
+        # Stop spinner before printing debug info
+        [[ -n "$spinner_pid" ]] && _zsh_claude_stop_spinner "$spinner_pid"
+        spinner_pid=""
+
+        print -r -- "" > /dev/tty
+        print -r -- "=== DEBUG MODE ===" > /dev/tty
+        print -r -- "" > /dev/tty
+        print -r -- "Mode: $mode" > /dev/tty
+        print -r -- "" > /dev/tty
+        print -r -- "System Prompt:" > /dev/tty
+        print -r -- "----------------" > /dev/tty
     fi
 
     # Build claude command - restrict tools and use mode-appropriate system prompt
     local claude_args=("-p" "--output-format" "text")
     claude_args+=("--tools" "WebSearch,WebFetch")
+    local system_prompt
     if [[ "$mode" == "explain" ]]; then
-        claude_args+=("--system-prompt" "You are a shell command explainer. The user may provide recent command history and current directory for context. The user will give you a shell command to explain. Explain what it does concisely:
+        system_prompt="You are a shell command explainer. The user may provide their last executed command and current directory for context.
+
+The user will give you a shell command to explain. Explain what it does concisely:
 - First line: one-sentence summary of the overall command.
 - Then explain each flag and argument using \"\`flag\`: explanation\" format.
 - If it's a pipeline, explain each stage.
-- Keep it brief. No preamble, no sign-off.")
+- Keep it brief. No preamble, no sign-off."
+        claude_args+=("--system-prompt" "$system_prompt")
     else
-        claude_args+=("--system-prompt" "You are a shell command generator. The user may provide recent command history and current directory for context to help you understand what they're working on. Your ONLY job is to output a single shell command that accomplishes the user's request. Output ONLY the raw shell command - no markdown, no code blocks, no explanations, no comments, no backticks. Just the executable command itself on a single line. If you need to look up command syntax, you may use web search.")
+        system_prompt="You are a shell command generator. The user may provide their last executed command and current directory for context to help you understand what they're working on.
+
+When the user references \"last command\", \"previous command\", \"that command\", or \"the command\", they are referring to the command shown in the \"Last command:\" context field.
+
+Your ONLY job is to output a single shell command that accomplishes the user's request. Output ONLY the raw shell command - no markdown, no code blocks, no explanations, no comments, no backticks. Just the executable command itself on a single line. If you need to look up command syntax, you may use web search."
+        claude_args+=("--system-prompt" "$system_prompt")
+    fi
+
+    # Print system prompt and user prompt in debug mode
+    if [[ $debug_mode -eq 1 ]]; then
+        print -r -- "$system_prompt" > /dev/tty
+        print -r -- "" > /dev/tty
+        print -r -- "User Prompt:" > /dev/tty
+        print -r -- "------------" > /dev/tty
+        print -r -- "$enhanced_query" > /dev/tty
+        print -r -- "" > /dev/tty
+        print -r -- "=================" > /dev/tty
+        print -r -- "" > /dev/tty
     fi
 
     if [[ -n "$ZSH_CLAUDE_SHELL_MODEL" ]]; then
@@ -359,9 +347,9 @@ _zsh_claude_accept_line() {
         print -r -- "$cmd" > /dev/tty
         print -r -- "" > /dev/tty
 
-        # Set buffer to the original command (without #?? prefix) so user can run it
-        BUFFER="$query"
-        CURSOR=${#BUFFER}
+        # Clear buffer since this is just an explanation, not a command to execute
+        BUFFER=""
+        CURSOR=0
     else
         # Sanitize the output
         cmd=$(_zsh_claude_sanitize "$cmd")

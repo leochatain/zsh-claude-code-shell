@@ -38,6 +38,34 @@ This command finds the 10 largest files in the current directory:
 ```
 The original command remains in your prompt for you to edit or execute.
 
+### Debug Mode (`--DEBUG`)
+Both modes support a `--DEBUG` flag to see the full prompt sent to Claude before execution. This helps you understand what context is being provided and how your query is being interpreted.
+
+**Example:**
+```bash
+#? --DEBUG find all typescript files
+```
+This will print:
+```
+=== DEBUG MODE ===
+
+Mode: generate
+
+System Prompt:
+----------------
+You are a shell command generator. The user may provide their last executed command...
+
+User Prompt:
+------------
+Current directory: ~/Projects/my-app
+Last command: npm install
+
+User request: find all typescript files
+
+=================
+```
+Then it will proceed to generate the command as usual. Works with both `#?` and `#??` modes.
+
 ## Prerequisites
 
 - [Claude Code CLI](https://claude.ai/claude-code) installed and authenticated
@@ -120,9 +148,10 @@ Set these environment variables in your `~/.zshrc` before the plugin loads:
 |----------|---------|-------------|
 | `ZSH_CLAUDE_SHELL_DISABLED` | `0` | Set to `1` to disable the plugin |
 | `ZSH_CLAUDE_SHELL_MODEL` | `sonnet` | Claude model to use (e.g., `sonnet`, `opus`, `haiku`) |
-| `ZSH_CLAUDE_SHELL_DEBUG` | `0` | Set to `1` to show debug output |
+| `ZSH_CLAUDE_SHELL_DEBUG` | `0` | Set to `1` to show stderr output from Claude CLI (errors and warnings) |
 | `ZSH_CLAUDE_SHELL_FANCY_LOADING` | `1` | Set to `0` to use simple loading message instead of animated spinner |
-| `ZSH_CLAUDE_SHELL_HISTORY_LINES` | `5` | Number of recent commands to include as context (set to `0` to disable) |
+
+**Note:** The `ZSH_CLAUDE_SHELL_DEBUG` variable is different from the `--DEBUG` flag. The variable shows Claude CLI errors, while the `--DEBUG` flag prints the full prompt being sent to Claude on a per-query basis.
 
 ### Example
 
@@ -139,7 +168,7 @@ export ZSH_CLAUDE_SHELL_DISABLED=1
 The plugin overrides zsh's `accept-line` widget (the Enter key handler). When you press Enter:
 
 1. If the line starts with `#? ` or `#?? `, it extracts your query
-2. Gathers context: current directory and recent command history (last 5 commands by default)
+2. Gathers context: current directory and your last executed command
 3. Calls `claude -p` with the context and your query
 4. For `#?` (generate): replaces the buffer with the generated command
 5. For `#??` (explain): displays the explanation and sets the buffer to the original command
@@ -151,12 +180,10 @@ Lines that don't start with `#? ` or `#?? ` work normally.
 
 The plugin automatically includes:
 - **Current directory**: Helps Claude understand your working location
-- **Recent command history**: Last 5 commands (configurable) to provide context about what you're working on
+- **Last command**: Your most recently executed command, which provides context for requests like "fix last command" or "explain that"
 - **Security**: Automatically filters out sensitive commands containing passwords, tokens, API keys, sudo, etc.
 
-This context helps Claude generate more relevant commands. For example, if you recently cloned a repository and changed into its directory, asking `#? run tests` will be aware of your project context.
-
-To disable history context, set `ZSH_CLAUDE_SHELL_HISTORY_LINES=0` in your `~/.zshrc`.
+This context helps Claude generate more relevant commands. For example, if you just ran a command with a typo, you can simply type `#? fix last command` and Claude will know exactly which command to correct.
 
 ## License
 
