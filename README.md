@@ -2,7 +2,7 @@
 
 An oh-my-zsh plugin that translates natural language comments into shell commands using [Claude Code](https://claude.ai/claude-code).
 
-> **Note:** This is a fork of [ArielTM/zsh-claude-code-shell](https://github.com/ArielTM/zsh-claude-code-shell).
+> **Note:** This is a fork of [ArielTM/zsh-claude-code-shell](https://github.com/ArielTM/zsh-claude-code-shell), which adds some improvements such as explain and generate modes.
 
 ## What It Does
 
@@ -20,6 +20,10 @@ Press Enter, and the line becomes:
 find . -name "*.js" -size +100k -mtime -7 -exec ls -lh {} \;
 ```
 Review the command, press Enter again to execute.
+
+![Generate command from natural language](vhs/generate_list.gif)
+
+More examples:
 
 ![Generate commit command](vhs/generate_commit.gif)
 
@@ -144,35 +148,6 @@ zinit light leochatain/zsh-claude-code-shell
 zplug "leochatain/zsh-claude-code-shell"
 ```
 
-## Usage
-
-1. Type a query starting with `#? ` followed by what you want to do
-2. Press Enter
-3. The comment is replaced with the generated command
-4. Review the command, press Enter to execute (or edit it first)
-
-### Examples
-
-```bash
-#? find all TODO comments in typescript files
-# becomes: grep -rn "TODO" --include="*.ts" .
-
-#? show top 10 largest files in current directory recursively
-# becomes: find . -type f -exec du -h {} + | sort -rh | head -10
-
-#? kill all processes matching "node"
-# becomes: pkill -f node
-
-#? compress all log files older than 30 days
-# becomes: find . -name "*.log" -mtime +30 -exec gzip {} \;
-
-#? show git commits from last week with stats
-# becomes: git log --since="1 week ago" --stat
-
-#? find duplicate files by md5 hash
-# becomes: find . -type f -exec md5sum {} + | sort | uniq -w32 -dD
-```
-
 ## Configuration
 
 Set these environment variables in your `~/.zshrc` before the plugin loads:
@@ -195,28 +170,6 @@ export ZSH_CLAUDE_SHELL_MODEL="sonnet"
 # Temporarily disable
 export ZSH_CLAUDE_SHELL_DISABLED=1
 ```
-
-## How It Works
-
-The plugin overrides zsh's `accept-line` widget (the Enter key handler). When you press Enter:
-
-1. If the line starts with `#? ` or `#?? `, it extracts your query
-2. Gathers context: current directory and your last executed command
-3. Calls `claude -p` with the context and your query
-4. For `#?` (generate): replaces the buffer with the generated command
-5. For `#??` (explain): displays the explanation and sets the buffer to the original command
-6. You review and press Enter again to execute (for generate mode) or edit as needed
-
-Lines that don't start with `#? ` or `#?? ` work normally.
-
-### Context Features
-
-The plugin automatically includes:
-- **Current directory**: Helps Claude understand your working location
-- **Last command**: Your most recently executed command, which provides context for requests like "fix last command" or "explain that"
-- **Security**: Automatically filters out sensitive commands containing passwords, tokens, API keys, sudo, etc.
-
-This context helps Claude generate more relevant commands. For example, if you just ran a command with a typo, you can simply type `#? fix last command` and Claude will know exactly which command to correct.
 
 ## License
 

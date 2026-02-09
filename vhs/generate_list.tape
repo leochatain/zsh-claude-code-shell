@@ -55,20 +55,20 @@
 #   Hide                            Hide the subsequent commands from the output
 #   Show                            Show the subsequent commands in the output
 
-Output explain.gif
+Output generate_list.gif
 
 Set Shell zsh
 
-Set FontSize 24
+Set FontSize 24 
 Set Width 1200
-Set Height 1000
+Set Height 300
 
 Require echo
 
 Hide
-Type "cd ~"
-Enter
 Type "source ~/.zshrc"
+Enter
+Type "cd "
 Enter
 Sleep 500ms
 
@@ -77,6 +77,6 @@ Ctrl+L
 Show
 
 
-Type "#?? git rebase -i --autosquash --autostash HEAD~5" Sleep 500ms  Enter
+Type "#? find all js files larger than 100kb modified in the last week and show their sizes" Sleep 500ms  Enter
 
-Sleep 15s
+Sleep 10s

@@ -59,7 +59,7 @@ Output generate_commit.gif
 
 Set Shell zsh
 
-Set FontSize 32
+Set FontSize 24 
 Set Width 1200
 Set Height 300
 
