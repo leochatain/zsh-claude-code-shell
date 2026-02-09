@@ -21,6 +21,24 @@ find . -name "*.js" -size +100k -mtime -7 -exec ls -lh {} \;
 ```
 Review the command, press Enter again to execute.
 
+**🔑 Context-Aware: The plugin has access to your last executed command**, enabling powerful workflows:
+
+```bash
+$ grp -r "TODO" src/           # Oops, typo!
+-bash: grp: command not found
+
+$ #? fix last command
+# becomes: grep -r "TODO" src/
+
+$ git commit -m "fix bug"      # Just committed
+$ #? amend last commit to add forgotten file config.json
+# becomes: git add config.json && git commit --amend --no-edit
+
+$ docker ps                     # See running containers
+$ #? stop all containers from last command
+# becomes: docker ps -q | xargs docker stop
+```
+
 ### Explain Mode (`#??`)
 Type `#??` followed by a command you don't understand. The plugin explains what it does in plain English.
 
@@ -36,7 +54,16 @@ This command finds the 10 largest files in the current directory:
 3. sort -rh: Sorts by size (largest first)
 4. head -10: Shows only the top 10 results
 ```
-The original command remains in your prompt for you to edit or execute.
+
+**🔑 You can also explain your last command** without retyping it:
+
+```bash
+$ tar -xzf archive.tar.gz -C /tmp --strip-components=1
+# What did I just do?
+
+$ #?? explain last command
+# Shows explanation of the tar command you just ran
+```
 
 ### Debug Mode (`--DEBUG`)
 Both modes support a `--DEBUG` flag to see the full prompt sent to Claude before execution. This helps you understand what context is being provided and how your query is being interpreted.
