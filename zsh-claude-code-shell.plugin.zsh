@@ -74,16 +74,24 @@ _zsh_claude_spinner() {
 }
 
 # Stop spinner and cleanup
+# Usage: _zsh_claude_stop_spinner <pid> [preserve_query]
+# If preserve_query=1, only clear the spinner line (keep the query line above)
 _zsh_claude_stop_spinner() {
     local pid=$1
+    local preserve_query=${2:-0}
     if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
         kill "$pid" 2>/dev/null
         # Small delay to let the process terminate
         sleep 0.05
     fi
-    # Show cursor, clear spinner line, move up one line, clear that line too
-    # This returns cursor to the original query line position
-    printf '\033[?25h\r\033[K\033[A\r\033[K' > /dev/tty
+    if (( preserve_query )); then
+        # Show cursor, clear spinner line only (keep query line above)
+        printf '\033[?25h\r\033[K' > /dev/tty
+    else
+        # Show cursor, clear spinner line, move up one line, clear that line too
+        # This returns cursor to the original query line position
+        printf '\033[?25h\r\033[K\033[A\r\033[K' > /dev/tty
+    fi
 }
 
 # Check if claude CLI is available (lazy check - deferred until first use)
@@ -309,7 +317,11 @@ _zsh_claude_accept_line() {
 
     # Reset trap and stop spinner
     trap - INT
-    [[ -n "$spinner_pid" ]] && _zsh_claude_stop_spinner "$spinner_pid"
+    if [[ "$mode" == "explain" ]]; then
+        [[ -n "$spinner_pid" ]] && _zsh_claude_stop_spinner "$spinner_pid" 1
+    else
+        [[ -n "$spinner_pid" ]] && _zsh_claude_stop_spinner "$spinner_pid"
+    fi
 
     # Read output from temp file
     cmd=$(<"$tmpfile")
@@ -331,6 +343,11 @@ _zsh_claude_accept_line() {
     if [[ "$mode" == "explain" ]]; then
         # Sanitize and print explanation to terminal
         cmd=$(_zsh_claude_sanitize "$cmd" --explain)
+        # If no spinner was used, reprint the original command for context
+        # (with fancy spinner, the query line is already preserved above)
+        if [[ -z "$spinner_pid" ]]; then
+            print -r -- "$BUFFER" > /dev/tty
+        fi
         print -r -- "" > /dev/tty
         print -r -- "$cmd" > /dev/tty
         print -r -- "" > /dev/tty
