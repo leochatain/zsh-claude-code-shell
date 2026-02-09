@@ -61,7 +61,7 @@ Set Shell zsh
 
 Set FontSize 24
 Set Width 1200
-Set Height 1000
+Set Height 600
 
 Require echo
 
