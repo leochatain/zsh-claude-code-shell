@@ -7,6 +7,21 @@
 : ${ZSH_CLAUDE_SHELL_DEBUG:=0}
 : ${ZSH_CLAUDE_SHELL_FANCY_LOADING:=1}  # Set to 0 to use simple loading message
 
+# System prompts
+_ZSH_CLAUDE_EXPLAIN_PROMPT="You are a shell command explainer. The user may provide their last executed command and current directory for context.
+
+The user will give you a shell command to explain. Explain what it does concisely:
+- First line: one-sentence summary of the overall command.
+- Then explain each flag and argument using \"\`flag\`: explanation\" format.
+- If it's a pipeline, explain each stage.
+- Keep it brief. No preamble, no sign-off."
+
+_ZSH_CLAUDE_GENERATE_PROMPT="You are a shell command generator. The user may provide their last executed command and current directory for context to help you understand what they're working on.
+
+When the user references \"last command\", \"previous command\", \"that command\", or \"the command\", they are referring to the command shown in the \"Last command:\" context field.
+
+Your ONLY job is to output a single shell command that accomplishes the user's request. Output ONLY the raw shell command - no markdown, no code blocks, no explanations, no comments, no backticks. Just the executable command itself on a single line. If you need to look up command syntax, you may use web search."
+
 # Thinking verbs (from Claude Code)
 _ZSH_CLAUDE_THINKING_VERBS=(
     "Accomplishing" "Actioning" "Actualizing" "Baking" "Brewing"
@@ -80,7 +95,16 @@ _zsh_claude_check_cli() {
     return 0
 }
 
+# Trim leading/trailing whitespace
+_zsh_claude_trim() {
+    local s="$1"
+    s="${s#"${s%%[![:space:]]*}"}"
+    s="${s%"${s##*[![:space:]]}"}"
+    echo "$s"
+}
+
 # Sanitize output - remove markdown code blocks and trim whitespace
+# Usage: _zsh_claude_sanitize <text> [--explain]
 _zsh_claude_sanitize() {
     local input="$1"
 
@@ -89,33 +113,13 @@ _zsh_claude_sanitize() {
     input="${input%\`\`\`}"         # Remove closing ```
     input="${input#\`\`\`}"         # Remove opening ``` without newline
 
-    # Remove single backticks wrapping the whole command
-    if [[ "$input" == \`*\` ]]; then
+    # Remove single backticks wrapping the whole command (not for explain mode)
+    if [[ "$2" != "--explain" ]] && [[ "$input" == \`*\` ]]; then
         input="${input#\`}"
         input="${input%\`}"
     fi
 
-    # Trim leading/trailing whitespace
-    input="${input#"${input%%[![:space:]]*}"}"
-    input="${input%"${input##*[![:space:]]}"}"
-
-    echo "$input"
-}
-
-# Sanitize explain output - strip wrapping code fences but keep inline backticks
-_zsh_claude_sanitize_explain() {
-    local input="$1"
-
-    # Remove wrapping code block markers (```bash, ```, etc.)
-    input="${input#\`\`\`*$'\n'}"  # Remove opening ```lang\n
-    input="${input%\`\`\`}"         # Remove closing ```
-    input="${input#\`\`\`}"         # Remove opening ``` without newline
-
-    # Trim leading/trailing whitespace
-    input="${input#"${input%%[![:space:]]*}"}"
-    input="${input%"${input##*[![:space:]]}"}"
-
-    echo "$input"
+    echo "$(_zsh_claude_trim "$input")"
 }
 
 # Get the last command for context
@@ -124,9 +128,7 @@ _zsh_claude_get_history_context() {
     local last_cmd
     last_cmd=$(fc -ln -1 2>/dev/null) || return
 
-    # Trim leading/trailing whitespace
-    last_cmd="${last_cmd#"${last_cmd%%[![:space:]]*}"}"
-    last_cmd="${last_cmd%"${last_cmd##*[![:space:]]}"}"
+    last_cmd=$(_zsh_claude_trim "$last_cmd")
 
     # Skip if empty or if it's a #? or #?? query
     [[ -z "$last_cmd" ]] && return
@@ -143,6 +145,26 @@ _zsh_claude_get_directory_context() {
     current_dir="${current_dir/#$HOME/~}"
 
     echo "Current directory: $current_dir"
+}
+
+# Print debug information to terminal
+_zsh_claude_print_debug() {
+    local mode="$1" system_prompt="$2" enhanced_query="$3"
+    print -r -- "" > /dev/tty
+    print -r -- "=== DEBUG MODE ===" > /dev/tty
+    print -r -- "" > /dev/tty
+    print -r -- "Mode: $mode" > /dev/tty
+    print -r -- "" > /dev/tty
+    print -r -- "System Prompt:" > /dev/tty
+    print -r -- "----------------" > /dev/tty
+    print -r -- "$system_prompt" > /dev/tty
+    print -r -- "" > /dev/tty
+    print -r -- "User Prompt:" > /dev/tty
+    print -r -- "------------" > /dev/tty
+    print -r -- "$enhanced_query" > /dev/tty
+    print -r -- "" > /dev/tty
+    print -r -- "=================" > /dev/tty
+    print -r -- "" > /dev/tty
 }
 
 # Main widget that intercepts Enter key
@@ -227,63 +249,33 @@ _zsh_claude_accept_line() {
 
     # Build enhanced query with context
     local enhanced_query=""
-    if [[ -n "$dir_context" ]] || [[ -n "$hist_context" ]]; then
-        [[ -n "$dir_context" ]] && enhanced_query+="${dir_context}"$'\n'
-        [[ -n "$hist_context" ]] && enhanced_query+="${hist_context}"$'\n'
+    [[ -n "$dir_context" ]] && enhanced_query+="${dir_context}"$'\n'
+    [[ -n "$hist_context" ]] && enhanced_query+="${hist_context}"$'\n'
+    if [[ -n "$enhanced_query" ]]; then
         enhanced_query+=$'\n'"User request: ${query}"
     else
         enhanced_query="$query"
     fi
 
-    # Print debug information if --DEBUG flag was used
-    if [[ $debug_mode -eq 1 ]]; then
-        # Stop spinner before printing debug info
-        [[ -n "$spinner_pid" ]] && _zsh_claude_stop_spinner "$spinner_pid"
-        spinner_pid=""
-
-        print -r -- "" > /dev/tty
-        print -r -- "=== DEBUG MODE ===" > /dev/tty
-        print -r -- "" > /dev/tty
-        print -r -- "Mode: $mode" > /dev/tty
-        print -r -- "" > /dev/tty
-        print -r -- "System Prompt:" > /dev/tty
-        print -r -- "----------------" > /dev/tty
-    fi
-
-    # Build claude command - restrict tools and use mode-appropriate system prompt
-    local claude_args=("-p" "--output-format" "text")
-    claude_args+=("--tools" "WebSearch,WebFetch")
+    # Select mode-appropriate system prompt
     local system_prompt
     if [[ "$mode" == "explain" ]]; then
-        system_prompt="You are a shell command explainer. The user may provide their last executed command and current directory for context.
-
-The user will give you a shell command to explain. Explain what it does concisely:
-- First line: one-sentence summary of the overall command.
-- Then explain each flag and argument using \"\`flag\`: explanation\" format.
-- If it's a pipeline, explain each stage.
-- Keep it brief. No preamble, no sign-off."
-        claude_args+=("--system-prompt" "$system_prompt")
+        system_prompt="$_ZSH_CLAUDE_EXPLAIN_PROMPT"
     else
-        system_prompt="You are a shell command generator. The user may provide their last executed command and current directory for context to help you understand what they're working on.
-
-When the user references \"last command\", \"previous command\", \"that command\", or \"the command\", they are referring to the command shown in the \"Last command:\" context field.
-
-Your ONLY job is to output a single shell command that accomplishes the user's request. Output ONLY the raw shell command - no markdown, no code blocks, no explanations, no comments, no backticks. Just the executable command itself on a single line. If you need to look up command syntax, you may use web search."
-        claude_args+=("--system-prompt" "$system_prompt")
+        system_prompt="$_ZSH_CLAUDE_GENERATE_PROMPT"
     fi
 
-    # Print system prompt and user prompt in debug mode
-    if [[ $debug_mode -eq 1 ]]; then
-        print -r -- "$system_prompt" > /dev/tty
-        print -r -- "" > /dev/tty
-        print -r -- "User Prompt:" > /dev/tty
-        print -r -- "------------" > /dev/tty
-        print -r -- "$enhanced_query" > /dev/tty
-        print -r -- "" > /dev/tty
-        print -r -- "=================" > /dev/tty
-        print -r -- "" > /dev/tty
+    # Print debug information if --DEBUG flag was used
+    if (( debug_mode )); then
+        [[ -n "$spinner_pid" ]] && _zsh_claude_stop_spinner "$spinner_pid"
+        spinner_pid=""
+        _zsh_claude_print_debug "$mode" "$system_prompt" "$enhanced_query"
     fi
 
+    # Build claude command
+    local claude_args=("-p" "--output-format" "text")
+    claude_args+=("--tools" "WebSearch,WebFetch")
+    claude_args+=("--system-prompt" "$system_prompt")
     if [[ -n "$ZSH_CLAUDE_SHELL_MODEL" ]]; then
         claude_args+=("--model" "$ZSH_CLAUDE_SHELL_MODEL")
     fi
@@ -294,7 +286,7 @@ Your ONLY job is to output a single shell command that accomplishes the user's r
     local exit_code
     local cmd
 
-    if [[ "$ZSH_CLAUDE_SHELL_DEBUG" == "1" ]]; then
+    if (( ZSH_CLAUDE_SHELL_DEBUG )); then
         claude "${claude_args[@]}" "$enhanced_query" > "$tmpfile" 2>&1 &
     else
         claude "${claude_args[@]}" "$enhanced_query" > "$tmpfile" 2>/dev/null &
@@ -331,18 +323,14 @@ Your ONLY job is to output a single shell command that accomplishes the user's r
 
     # Handle errors
     if [[ $exit_code -ne 0 ]] || [[ -z "$cmd" ]]; then
-        if [[ "$mode" == "explain" ]]; then
-            zle -M "Error: Failed to explain command (exit code: $exit_code)"
-        else
-            zle -M "Error: Failed to generate command (exit code: $exit_code)"
-        fi
+        zle -M "Error: Failed to ${mode} command (exit code: $exit_code)"
         zle reset-prompt
         return 1
     fi
 
     if [[ "$mode" == "explain" ]]; then
         # Sanitize and print explanation to terminal
-        cmd=$(_zsh_claude_sanitize_explain "$cmd")
+        cmd=$(_zsh_claude_sanitize "$cmd" --explain)
         print -r -- "" > /dev/tty
         print -r -- "$cmd" > /dev/tty
         print -r -- "" > /dev/tty
@@ -363,8 +351,4 @@ Your ONLY job is to output a single shell command that accomplishes the user's r
 }
 
 # Initialize the plugin
-_zsh_claude_init() {
-    zle -N accept-line _zsh_claude_accept_line
-}
-
-_zsh_claude_init
+zle -N accept-line _zsh_claude_accept_line
