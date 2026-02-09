@@ -1,5 +1,5 @@
 # zsh-claude-code-shell - Generate shell commands from natural language using Claude Code
-# Usage: Type "# <description>" and press Enter to generate a command
+# Usage: Type "#? <description>" and press Enter to generate a command
 
 # Configuration
 : ${ZSH_CLAUDE_SHELL_DISABLED:=0}
@@ -110,8 +110,14 @@ _zsh_claude_accept_line() {
         return
     fi
 
-    # Pass through if buffer doesn't start with "# "
-    if [[ ! "$BUFFER" =~ ^'# ' ]]; then
+    # Only trigger in interactive mode
+    if [[ ! -o interactive ]]; then
+        zle .accept-line
+        return
+    fi
+
+    # Pass through if buffer doesn't start with "#? "
+    if [[ "$BUFFER" != '#? '* ]]; then
         zle .accept-line
         return
     fi
@@ -122,8 +128,8 @@ _zsh_claude_accept_line() {
         return
     fi
 
-    # Extract query (remove "# " prefix)
-    local query="${BUFFER:2}"
+    # Extract query (remove "#? " prefix)
+    local query="${BUFFER:3}"
 
     # Skip empty queries
     if [[ -z "${query// }" ]]; then
