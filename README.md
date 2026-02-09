@@ -21,6 +21,8 @@ find . -name "*.js" -size +100k -mtime -7 -exec ls -lh {} \;
 ```
 Review the command, press Enter again to execute.
 
+![Generate commit command](vhs/generate_commit.gif)
+
 **🔑 Context-Aware: The plugin has access to your last executed command**, enabling powerful workflows:
 
 ```bash
@@ -39,6 +41,8 @@ $ #? stop all containers from last command
 # becomes: docker ps -q | xargs docker stop
 ```
 
+![Fix typo in command](vhs/generate_fix.gif)
+
 ### Explain Mode (`#??`)
 Type `#??` followed by a command you don't understand. The plugin explains what it does in plain English.
 
@@ -54,6 +58,8 @@ This command finds the 10 largest files in the current directory:
 3. sort -rh: Sorts by size (largest first)
 4. head -10: Shows only the top 10 results
 ```
+
+![Explain command](vhs/explain.gif)
 
 **🔑 You can also explain your last command** without retyping it:
 
